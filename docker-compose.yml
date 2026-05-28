@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fintech_lab_postgres
+    environment:
+      POSTGRES_DB: fintech_lab
+      POSTGRES_USER: fintech_lab
+      POSTGRES_PASSWORD: fintech_lab
+    ports:
+      - "5432:5432"
+    volumes:
+      - fintech_lab_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fintech_lab -d fintech_lab"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  fintech_lab_pgdata:

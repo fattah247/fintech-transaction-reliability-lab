@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: fintech-transaction-reliability-lab
+  datasource:
+    url: jdbc:postgresql://localhost:5432/fintech_lab
+    username: fintech_lab
+    password: fintech_lab
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+payment-lab:
+  provider:
+    demo-signature: local-demo-signature
