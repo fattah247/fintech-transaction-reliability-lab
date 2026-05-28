@@ -1,78 +1,276 @@
 # Fintech Transaction Reliability Lab
 
-This project simulates common reliability problems in payment systems: duplicate requests, webhook retries, invalid state changes, settlement mismatches, refund timing, manual review, and auditability.
+![CI](https://github.com/fattah247/fintech-transaction-reliability-lab/actions/workflows/ci.yml/badge.svg)
 
-It is a local-first modular monolith built to show backend judgment, not cloud setup or framework sprawl.
+A local-first Spring Boot backend that simulates reliability problems commonly found in payment systems: duplicate requests, webhook retries, invalid state changes, settlement mismatches, refund timing, manual review, and auditability.
+
+This project is intentionally small. The goal is not to look senior by adding cloud services, microservices, Kafka, or managed infrastructure. The goal is to show backend judgment around state correctness, failure handling, and operational traceability.
 
 > This is a public-safe educational project based on common payment engineering patterns. It does not use proprietary employer code, architecture, data, naming, business rules, logs, screenshots, or internal workflows.
 
-## What This Proves
+---
 
-- payment state management
-- idempotency handling
-- duplicate webhook handling
+## What This Project Proves
+
+This repo is built to demonstrate practical backend reliability thinking:
+
+- payment intent lifecycle design
+- idempotency handling for retried client requests
+- duplicate provider webhook detection
+- guarded transaction state transitions
 - settlement batch creation
 - reconciliation mismatch detection
-- auditability
-- failure handling
-- backend engineering judgment
+- manual review workflow
+- refund timing rules
+- audit trail generation
+- business-invariant testing
+- CI verification with GitHub Actions
 
-## What It Simulates
+The important part is not the framework. The important part is how the system behaves when things go wrong.
 
-- payment intent creation
-- guarded transaction state transitions
-- fake provider authorization, success, failure, expiry, and reversal events
-- duplicate and contradictory webhooks
-- settlement batches for successful transactions
-- reconciliation against provider-style reports
-- manual review creation and resolution
-- refund request and completion flow
+---
+
+## Why This Project Matters
+
+Payment systems often fail in boring but expensive ways:
+
+- a client retries the same request and creates duplicate payments
+- a provider sends the same webhook more than once
+- a late webhook contradicts the current local state
+- a provider report does not match local records
+- a refund is requested after settlement or reconciliation
+- operators need to understand what happened after the fact
+
+This project models those failure modes in a safe, local, public portfolio repo.
+
+---
+
+## Tech Stack
+
+- Java 21
+- Spring Boot
+- Spring Web
+- Spring Data JPA
+- PostgreSQL for local runtime
+- H2 for tests
+- Maven Wrapper
+- Docker Compose
+- GitHub Actions
+
+---
 
 ## Architecture
 
 ```text
-Laptop
-├── JDK 21
-├── Apache Maven
-├── Spring Boot backend app
-├── Docker Compose
-│   └── PostgreSQL local container
-├── H2 test database
-├── Git local repository
-└── Public GitHub repository
-    └── GitHub Actions test workflow
+Client / Merchant API
+        |
+        v
+Spring Boot Backend
+        |
+        ├── payment
+        │   ├── payment intent creation
+        │   ├── idempotency handling
+        │   ├── state transitions
+        │   └── fake provider webhook handling
+        |
+        ├── settlement
+        │   ├── settlement batch creation
+        │   └── settlement batch items
+        |
+        ├── reconciliation
+        │   ├── provider report import
+        │   └── mismatch detection
+        |
+        ├── review
+        │   ├── manual review cases
+        │   └── review resolution
+        |
+        ├── refund
+        │   ├── refund request
+        │   └── refund completion
+        |
+        └── audit
+            └── append-style audit events
+
+PostgreSQL
+        |
+        ├── payment_intents
+        ├── payment_transactions
+        ├── settlement_batches
+        ├── settlement_batch_items
+        ├── review_cases
+        ├── refund_requests
+        └── audit_events
 ```
 
-## Why It Stays Small
+---
 
-This project does not try to look senior by adding microservices, Kafka, cloud deployment, or managed infrastructure. The goal is to go deep on state correctness and failure handling with one Spring Boot app that can be tested honestly on a laptop.
+## Main Flow
 
-## State Model
+```mermaid
+flowchart TD
+    A[Merchant / API Client] --> B[Create Payment Intent]
+    B --> C{Idempotency-Key exists?}
 
-The payment state machine is centered on correctness:
+    C -- No --> D[Create new PaymentIntent]
+    C -- Yes, same payload --> E[Return existing PaymentIntent]
+    C -- Yes, different payload --> F[Reject request]
 
-```text
-CREATED
-PENDING
-AUTHORIZED
-SUCCESS
-FAILED
-EXPIRED
-REVERSAL_REQUIRED
-SETTLED
-RECONCILED
-REFUND_REQUESTED
-REFUNDED
-MANUAL_REVIEW
+    D --> G[State: CREATED]
+    E --> G
+
+    G --> H[Start Payment]
+    H --> I[State: PENDING]
+
+    I --> J[Fake Provider Webhook]
+    J --> K{Valid signature?}
+
+    K -- No --> L[Create Review Case]
+    K -- Yes --> M{Duplicate provider event?}
+
+    M -- Yes --> N[Ignore duplicate webhook]
+    M -- No --> O{Amount and currency match?}
+
+    O -- No --> P[Move to MANUAL_REVIEW]
+    O -- Yes --> Q{Provider status}
+
+    Q --> R[AUTHORIZED]
+    Q --> S[SUCCESS]
+    Q --> T[FAILED]
+    Q --> U[EXPIRED]
+    Q --> V[REVERSAL_REQUIRED]
+
+    R --> W[Apply guarded state transition]
+    S --> W
+    T --> W
+    U --> W
+    V --> W
+
+    W --> X{Transition valid?}
+    X -- No --> Y[Create Review Case]
+    X -- Yes --> Z[Save PaymentTransaction]
+
+    Z --> AA[Create Settlement Batch]
+    AA --> AB[Mark transaction settled]
+    AB --> AC[State: SETTLED]
+
+    AC --> AD[Import Reconciliation Report]
+    AD --> AE{Provider report matches local record?}
+
+    AE -- No --> AF[Create Review Case]
+    AE -- Yes --> AG[State: RECONCILED]
+
+    AF --> AH[Audit Trail]
+    AG --> AH
+    P --> AH
+    N --> AH
+    L --> AH
 ```
 
-Examples of guarded rules:
+---
 
-- `SUCCESS` cannot go back to `PENDING`
-- `FAILED` cannot become `SUCCESS` through a contradictory late event
-- `SETTLED` is required before `RECONCILED`
-- `RECONCILED` blocks direct refund requests
-- duplicate provider events do not create duplicate transactions
+## Payment State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> CREATED
+
+    CREATED --> PENDING: start()
+    CREATED --> EXPIRED: expire()
+
+    PENDING --> AUTHORIZED: authorize()
+    PENDING --> SUCCESS: succeed()
+    PENDING --> FAILED: fail()
+    PENDING --> EXPIRED: expire()
+
+    AUTHORIZED --> SUCCESS: succeed()
+    AUTHORIZED --> FAILED: fail()
+    AUTHORIZED --> EXPIRED: expire()
+    AUTHORIZED --> REVERSAL_REQUIRED: requireReversal()
+
+    SUCCESS --> SETTLED: settle()
+    SUCCESS --> REFUND_REQUESTED: requestRefund()
+    SUCCESS --> REVERSAL_REQUIRED: requireReversal()
+
+    SETTLED --> RECONCILED: reconcile()
+    SETTLED --> REFUND_REQUESTED: requestRefund()
+
+    REFUND_REQUESTED --> REFUNDED: refund()
+
+    CREATED --> MANUAL_REVIEW: mismatch / exception path
+    PENDING --> MANUAL_REVIEW: mismatch / exception path
+    AUTHORIZED --> MANUAL_REVIEW: mismatch / exception path
+    SUCCESS --> MANUAL_REVIEW: mismatch / exception path
+    SETTLED --> MANUAL_REVIEW: mismatch / exception path
+
+    FAILED --> [*]
+    EXPIRED --> [*]
+    RECONCILED --> [*]
+    REFUNDED --> [*]
+    REVERSAL_REQUIRED --> [*]
+    MANUAL_REVIEW --> [*]
+```
+
+---
+
+## Demo Screenshots
+
+These screenshots show the project as a runnable backend system, not only source code.
+
+| Screenshot | What it proves |
+|---|---|
+| Repo overview | The project purpose is clear from the first scan |
+| CI passing | Tests are continuously verified |
+| Demo script output | The full local flow runs end-to-end |
+| Idempotency replay | Retried client requests return the same payment intent |
+| Duplicate webhook ignored | Provider retry events do not create duplicate transactions |
+| Manual review from mismatch | Unsafe provider data is isolated for review |
+| Settlement batch | Successful transactions can be grouped and settled |
+| Reconciliation mismatch | Provider report differences create review cases |
+| Audit trail | State changes and decisions are traceable |
+| Local tests | Business invariants are tested locally |
+
+### 1. Repo overview
+
+![Repo overview](docs/screenshots/01-repo-overview.png)
+
+### 2. CI passing
+
+![CI passing](docs/screenshots/02-ci-passing.png)
+
+### 3. Demo script output
+
+![Demo script output](docs/screenshots/03-demo-script-output.png)
+
+### 4. Idempotency replay
+
+![Idempotency replay](docs/screenshots/04-idempotency-replay.png)
+
+### 5. Duplicate webhook ignored
+
+![Duplicate webhook ignored](docs/screenshots/05-duplicate-webhook-ignored.png)
+
+### 6. Amount mismatch creates manual review
+
+![Amount mismatch manual review](docs/screenshots/06-amount-mismatch-manual-review.png)
+
+### 7. Settlement batch
+
+![Settlement batch](docs/screenshots/07-settlement-batch.png)
+
+### 8. Reconciliation mismatch
+
+![Reconciliation mismatch](docs/screenshots/08-reconciliation-mismatch.png)
+
+### 9. Audit trail
+
+![Audit trail](docs/screenshots/09-audit-trail.png)
+
+### 10. Local tests
+
+![Local tests](docs/screenshots/10-local-tests.png)
+
+---
 
 ## Project Layout
 
@@ -84,8 +282,10 @@ Examples of guarded rules:
 │   ├── demo-flow.md
 │   ├── failure-scenarios.md
 │   ├── interview-defense.md
-│   └── security-review.md
-├── scripts/demo.sh
+│   ├── security-review.md
+│   └── screenshots
+├── scripts
+│   └── demo.sh
 ├── src/main/java/id/fatarc/portfolio/fintechlab
 │   ├── audit
 │   ├── common
@@ -94,130 +294,62 @@ Examples of guarded rules:
 │   ├── refund
 │   ├── review
 │   └── settlement
-└── src/test/java/id/fatarc/portfolio/fintechlab/payment
+└── src/test/java/id/fatarc/portfolio/fintechlab
 ```
+
+---
 
 ## Local Setup
 
-Prerequisites:
+### Prerequisites
 
 - JDK 21
-- Maven 3.9+
 - Docker
+- Maven, or use the included Maven Wrapper
 
-Start PostgreSQL:
+### 1. Start PostgreSQL
 
 ```bash
 docker compose up -d postgres
 ```
 
-Run the app:
+### 2. Run the app
+
+Using Maven:
 
 ```bash
 mvn spring-boot:run
 ```
 
-Run tests:
-
-```bash
-mvn test
-```
-
-Wrapper fallback:
+Or using Maven Wrapper:
 
 ```bash
 ./mvnw spring-boot:run
-./mvnw test
 ```
 
-Health check:
+### 3. Health check
 
 ```bash
 curl http://localhost:8080/actuator/health
 ```
 
-## Endpoints
+Expected result:
 
-Payment intents:
-
-- `POST /api/payment-intents`
-- `POST /api/payment-intents/{paymentIntentId}/start`
-- `GET /api/payment-intents/{paymentIntentId}`
-
-Fake provider:
-
-- `POST /fake-provider/webhook`
-
-Settlement:
-
-- `POST /api/settlements/batches?merchantId=<merchant-id>`
-- `GET /api/settlements/batches`
-- `GET /api/settlements/batches/{batchId}/items`
-
-Reconciliation:
-
-- `POST /api/reconciliation/reports`
-
-Audit and review:
-
-- `GET /api/audit-events?aggregateType=PAYMENT_INTENT&aggregateId=<id>`
-- `GET /api/review-cases`
-- `POST /api/review-cases/{reviewCaseId}/resolve`
-
-Refunds:
-
-- `POST /api/refunds/payment-intents/{paymentIntentId}`
-- `POST /api/refunds/{refundId}/complete`
-
-## Example Flow
-
-Create a payment intent:
-
-```bash
-curl -X POST http://localhost:8080/api/payment-intents \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: payment-001' \
-  -d '{
-    "merchantId": "merchant-demo-01",
-    "merchantReference": "ORDER-1001",
-    "amount": 125000,
-    "currency": "IDR"
-  }'
+```json
+{
+  "status": "UP"
+}
 ```
 
-Start execution:
+---
+
+## Run Tests
 
 ```bash
-curl -X POST http://localhost:8080/api/payment-intents/<payment-intent-id>/start
+./mvnw test
 ```
 
-Send a fake provider success webhook:
-
-```bash
-curl -X POST http://localhost:8080/fake-provider/webhook \
-  -H 'Content-Type: application/json' \
-  -H 'X-Provider-Signature: local-demo-signature' \
-  -d '{
-    "providerEventId": "evt-001",
-    "providerTransactionId": "provider-tx-001",
-    "paymentIntentId": "<payment-intent-id>",
-    "status": "SUCCESS",
-    "amount": 125000,
-    "currency": "IDR"
-  }'
-```
-
-Create a settlement batch:
-
-```bash
-curl -X POST 'http://localhost:8080/api/settlements/batches?merchantId=merchant-demo-01'
-```
-
-See the full flow in [docs/demo-flow.md](/Users/muhammadfattah/Documents/Projects/Git/Active/fintech-transaction-reliability-lab/docs/demo-flow.md) or run [scripts/demo.sh](/Users/muhammadfattah/Documents/Projects/Git/Active/fintech-transaction-reliability-lab/scripts/demo.sh).
-
-## What The Tests Prove
-
-The tests focus on business invariants, not only `200 OK` responses.
+The tests focus on business invariants, not only successful HTTP responses.
 
 Current coverage includes:
 
@@ -233,47 +365,413 @@ Current coverage includes:
 - mismatched reconciliation creates review cases
 - refund after reconciliation is blocked
 
+---
+
+## Run Full Demo Flow
+
+The easiest way to see the project behavior is:
+
+```bash
+./scripts/demo.sh
+```
+
+The demo script performs this flow:
+
+1. create payment intent
+2. replay the same request with the same idempotency key
+3. start payment execution
+4. send fake provider success webhook
+5. create settlement batch
+6. send reconciliation report with mismatch
+7. print open review cases
+8. print audit trail
+
+---
+
+## API Endpoints
+
+### Payment Intents
+
+```http
+POST /api/payment-intents
+POST /api/payment-intents/{paymentIntentId}/start
+GET  /api/payment-intents/{paymentIntentId}
+```
+
+### Fake Provider Webhook
+
+```http
+POST /fake-provider/webhook
+```
+
+Required header:
+
+```http
+X-Provider-Signature: local-demo-signature
+```
+
+### Settlement
+
+```http
+POST /api/settlements/batches?merchantId=<merchant-id>
+GET  /api/settlements/batches
+GET  /api/settlements/batches/{batchId}/items
+```
+
+### Reconciliation
+
+```http
+POST /api/reconciliation/reports
+```
+
+### Review Cases
+
+```http
+GET  /api/review-cases
+POST /api/review-cases/{reviewCaseId}/resolve
+```
+
+### Audit Events
+
+```http
+GET /api/audit-events?aggregateType=PAYMENT_INTENT&aggregateId=<payment-intent-id>
+```
+
+### Refunds
+
+```http
+POST /api/refunds/payment-intents/{paymentIntentId}
+POST /api/refunds/{refundId}/complete
+```
+
+---
+
+## Example Requests
+
+### Create a payment intent
+
+```bash
+curl -X POST http://localhost:8080/api/payment-intents \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: payment-001' \
+  -d '{
+    "merchantId": "merchant-demo-01",
+    "merchantReference": "ORDER-1001",
+    "amount": 125000,
+    "currency": "IDR"
+  }'
+```
+
+### Replay the same request
+
+Use the same `Idempotency-Key` and the same payload:
+
+```bash
+curl -X POST http://localhost:8080/api/payment-intents \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: payment-001' \
+  -d '{
+    "merchantId": "merchant-demo-01",
+    "merchantReference": "ORDER-1001",
+    "amount": 125000,
+    "currency": "IDR"
+  }'
+```
+
+Expected behavior:
+
+- the existing payment intent is returned
+- a duplicate payment intent is not created
+- an audit event is recorded
+
+### Start payment execution
+
+```bash
+curl -X POST http://localhost:8080/api/payment-intents/<payment-intent-id>/start
+```
+
+Expected behavior:
+
+```text
+CREATED -> PENDING
+```
+
+### Send a fake provider success webhook
+
+```bash
+curl -X POST http://localhost:8080/fake-provider/webhook \
+  -H 'Content-Type: application/json' \
+  -H 'X-Provider-Signature: local-demo-signature' \
+  -d '{
+    "providerEventId": "evt-001",
+    "providerTransactionId": "provider-tx-001",
+    "paymentIntentId": "<payment-intent-id>",
+    "status": "SUCCESS",
+    "amount": 125000,
+    "currency": "IDR"
+  }'
+```
+
+Expected behavior:
+
+```text
+PENDING -> SUCCESS
+```
+
+A `PaymentTransaction` is saved.
+
+### Create a settlement batch
+
+```bash
+curl -X POST 'http://localhost:8080/api/settlements/batches?merchantId=merchant-demo-01'
+```
+
+Expected behavior:
+
+```text
+SUCCESS -> SETTLED
+```
+
+### Import a reconciliation report
+
+```bash
+curl -X POST http://localhost:8080/api/reconciliation/reports \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "rows": [
+      {
+        "providerTransactionId": "provider-tx-001",
+        "amount": 125000,
+        "currency": "IDR",
+        "providerStatus": "SUCCESS",
+        "settlementDate": "2026-01-01"
+      }
+    ]
+  }'
+```
+
+If the provider report matches local records, the payment can move from:
+
+```text
+SETTLED -> RECONCILED
+```
+
+If the report does not match, the system creates a review case.
+
+### View open review cases
+
+```bash
+curl http://localhost:8080/api/review-cases
+```
+
+### View audit trail
+
+```bash
+curl 'http://localhost:8080/api/audit-events?aggregateType=PAYMENT_INTENT&aggregateId=<payment-intent-id>'
+```
+
+---
+
+## Failure Scenarios Modeled
+
+### Duplicate client request
+
+A client sends the same create-payment request twice with the same idempotency key.
+
+Expected behavior:
+
+- return the original payment intent
+- do not create a duplicate payment intent
+- record an idempotency replay audit event
+
+### Reused idempotency key with different payload
+
+A client reuses the same idempotency key but changes amount, currency, merchant reference, or merchant ID.
+
+Expected behavior:
+
+- reject the request
+- do not mutate the original payment intent
+
+### Duplicate provider webhook
+
+A fake provider sends the same event twice.
+
+Expected behavior:
+
+- ignore the duplicate
+- create a review case
+- record an audit event
+- do not create a duplicate transaction
+
+### Duplicate provider transaction with new event ID
+
+A provider sends a new event ID but the same provider transaction ID.
+
+Expected behavior:
+
+- treat it as suspicious
+- create a review case
+- do not create another transaction
+
+### Amount or currency mismatch
+
+A webhook amount or currency does not match the local payment intent.
+
+Expected behavior:
+
+- move payment intent to `MANUAL_REVIEW`
+- create a review case
+- record an audit event
+- avoid unsafe state mutation
+
+### Invalid late transition
+
+A webhook tries to apply a transition that is no longer valid.
+
+Expected behavior:
+
+- do not force the state change
+- create a review case
+- record an ignored webhook audit event
+
+### Reconciliation mismatch
+
+A provider report does not match local transaction data.
+
+Expected behavior:
+
+- create review cases for mismatches
+- record reconciliation audit events
+- only reconcile clean matched records
+
+### Refund after reconciliation
+
+A refund is requested after a payment has already been reconciled.
+
+Expected behavior:
+
+- block direct refund
+- require manual review
+- record the blocked refund attempt
+
+---
+
+## Design Choices
+
+### Modular monolith over microservices
+
+This project is intentionally a modular monolith.
+
+Reason:
+
+- easier to run locally
+- easier to test
+- easier to understand
+- no fake distributed complexity
+- better for demonstrating core transaction behavior
+
+### PostgreSQL locally, H2 for tests
+
+PostgreSQL is used for local runtime to keep the project closer to real backend development.
+
+H2 is used for tests to keep feedback fast and simple.
+
+### No cloud deployment
+
+There is no AWS, GCP, Azure, managed database, hosted queue, or paid observability.
+
+Reason:
+
+- no billing risk
+- no secret management problem
+- easier for reviewers to run
+- portfolio value comes from correctness, not hosting
+
+### Fake provider instead of real gateway
+
+The provider webhook is simulated.
+
+Reason:
+
+- avoids sensitive payment integrations
+- avoids compliance concerns
+- keeps the project public-safe
+- focuses on reliability behavior
+
+### Audit trail as a first-class concept
+
+State changes and important decisions are recorded as audit events.
+
+Reason:
+
+- payment systems need traceability
+- debugging requires historical context
+- manual review needs evidence
+- operators need to know why a state changed
+
+---
+
 ## Documentation Map
 
-- [failure-scenarios.md](/Users/muhammadfattah/Documents/Projects/Git/Active/fintech-transaction-reliability-lab/docs/failure-scenarios.md)
-- [security-review.md](/Users/muhammadfattah/Documents/Projects/Git/Active/fintech-transaction-reliability-lab/docs/security-review.md)
-- [interview-defense.md](/Users/muhammadfattah/Documents/Projects/Git/Active/fintech-transaction-reliability-lab/docs/interview-defense.md)
-- [demo-flow.md](/Users/muhammadfattah/Documents/Projects/Git/Active/fintech-transaction-reliability-lab/docs/demo-flow.md)
-- [adr](/Users/muhammadfattah/Documents/Projects/Git/Active/fintech-transaction-reliability-lab/docs/adr)
+- [Demo Flow](docs/demo-flow.md)
+- [Failure Scenarios](docs/failure-scenarios.md)
+- [Security Review](docs/security-review.md)
+- [Interview Defense](docs/interview-defense.md)
+- [Architecture Decision Records](docs/adr)
+
+---
 
 ## Continuous Verification
 
-GitHub Actions is intentionally narrow:
+GitHub Actions runs on:
 
-- runs on `push`
-- runs on `pull_request`
-- uses the standard hosted runner
-- runs `./mvnw test`
+- push to `main`
+- push to `dev`
+- push to `dev/**`
+- pull requests into `main`
+- pull requests into `dev`
+
+The workflow:
+
+1. checks out the repository
+2. sets up Java 21
+3. caches Maven dependencies
+4. runs tests with `./mvnw test`
 
 No deployment, registry publish, artifact publish, or scheduled workflow is included.
 
+---
+
 ## Limitations
 
-- This project does not process real payments.
-- This project does not connect to a real payment gateway.
-- This project does not store card data.
-- This project does not implement PCI-DSS compliance.
-- This project does not represent any employer system.
-- This project does not use proprietary architecture, data, or naming.
-- This project does not model distributed locking, queue-based retries, or multi-region behavior.
+This project does NOT:
 
-## Guardrails
+- process real payments
+- connect to a real payment gateway
+- store card data
+- implement PCI-DSS compliance
+- represent any employer system
+- use proprietary architecture, data, logs, naming, or workflows
+- model distributed locking
+- model queue-based retries
+- model multi-region behavior
+- implement real authentication or authorization
+- implement production-grade observability
 
-Do not add these later unless the goal changes:
+These omissions are intentional.
 
-- real payment gateways
-- managed databases
-- cloud deployment
-- hosted observability
-- external notification services
-- private CI runners
-- image publishing workflows
-- scheduled jobs
-- hosted queues
-- paid security scanners
-- anything that needs billing setup
+## What To Review First
+
+For recruiters or engineers reviewing this repo quickly:
+
+1. Run `./scripts/demo.sh`
+2. Check the state machine diagram
+3. Check the test suite
+4. Check `PaymentIntent`
+5. Check `ProviderWebhookService`
+6. Check `SettlementService`
+7. Check `ReconciliationService`
+8. Check the audit and review flow
+
+The core idea: this is a small backend system built around safe payment-state handling, not a generic CRUD tutorial.
