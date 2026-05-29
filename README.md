@@ -34,7 +34,7 @@ The important part is not the framework. The important part is how the system be
 
 Payment systems often fail in boring but expensive ways:
 
-- a client retries the same request and creates duplicate payments
+- a client retries the same request and accidentally creates duplicate payments
 - a provider sends the same webhook more than once
 - a late webhook contradicts the current local state
 - a provider report does not match local records
@@ -109,62 +109,39 @@ PostgreSQL
 
 ```mermaid
 flowchart TD
-    A[Merchant / API Client] --> B[Create Payment Intent]
-    B --> C{Idempotency-Key exists?}
+    A[Merchant API Client] --> B[Create Payment Intent]
+    B --> C[Check Idempotency Key]
 
-    C -- No --> D[Create new PaymentIntent]
-    C -- Yes, same payload --> E[Return existing PaymentIntent]
-    C -- Yes, different payload --> F[Reject request]
+    C --> D[New Payment Intent]
+    C --> E[Return Existing Intent]
+    C --> F[Reject Different Payload]
 
-    D --> G[State: CREATED]
+    D --> G[Start Payment]
     E --> G
+    G --> H[Payment Pending]
 
-    G --> H[Start Payment]
-    H --> I[State: PENDING]
+    H --> I[Fake Provider Webhook]
+    I --> J[Validate Signature]
+    J --> K[Check Duplicate Event]
+    K --> L[Check Amount and Currency]
 
-    I --> J[Fake Provider Webhook]
-    J --> K{Valid signature?}
+    L --> M[Apply Provider Status]
+    M --> N[Save Payment Transaction]
 
-    K -- No --> L[Create Review Case]
-    K -- Yes --> M{Duplicate provider event?}
+    J --> O[Manual Review]
+    K --> O
+    L --> O
 
-    M -- Yes --> N[Ignore duplicate webhook]
-    M -- No --> O{Amount and currency match?}
+    N --> P[Create Settlement Batch]
+    P --> Q[Payment Settled]
 
-    O -- No --> P[Move to MANUAL_REVIEW]
-    O -- Yes --> Q{Provider status}
+    Q --> R[Import Reconciliation Report]
+    R --> S[Compare Provider Report]
+    S --> T[Payment Reconciled]
+    S --> O
 
-    Q --> R[AUTHORIZED]
-    Q --> S[SUCCESS]
-    Q --> T[FAILED]
-    Q --> U[EXPIRED]
-    Q --> V[REVERSAL_REQUIRED]
-
-    R --> W[Apply guarded state transition]
-    S --> W
-    T --> W
-    U --> W
-    V --> W
-
-    W --> X{Transition valid?}
-    X -- No --> Y[Create Review Case]
-    X -- Yes --> Z[Save PaymentTransaction]
-
-    Z --> AA[Create Settlement Batch]
-    AA --> AB[Mark transaction settled]
-    AB --> AC[State: SETTLED]
-
-    AC --> AD[Import Reconciliation Report]
-    AD --> AE{Provider report matches local record?}
-
-    AE -- No --> AF[Create Review Case]
-    AE -- Yes --> AG[State: RECONCILED]
-
-    AF --> AH[Audit Trail]
-    AG --> AH
-    P --> AH
-    N --> AH
-    L --> AH
+    O --> U[Audit Trail]
+    T --> U
 ```
 
 ---
@@ -175,33 +152,33 @@ flowchart TD
 stateDiagram-v2
     [*] --> CREATED
 
-    CREATED --> PENDING: start()
-    CREATED --> EXPIRED: expire()
+    CREATED --> PENDING
+    CREATED --> EXPIRED
 
-    PENDING --> AUTHORIZED: authorize()
-    PENDING --> SUCCESS: succeed()
-    PENDING --> FAILED: fail()
-    PENDING --> EXPIRED: expire()
+    PENDING --> AUTHORIZED
+    PENDING --> SUCCESS
+    PENDING --> FAILED
+    PENDING --> EXPIRED
 
-    AUTHORIZED --> SUCCESS: succeed()
-    AUTHORIZED --> FAILED: fail()
-    AUTHORIZED --> EXPIRED: expire()
-    AUTHORIZED --> REVERSAL_REQUIRED: requireReversal()
+    AUTHORIZED --> SUCCESS
+    AUTHORIZED --> FAILED
+    AUTHORIZED --> EXPIRED
+    AUTHORIZED --> REVERSAL_REQUIRED
 
-    SUCCESS --> SETTLED: settle()
-    SUCCESS --> REFUND_REQUESTED: requestRefund()
-    SUCCESS --> REVERSAL_REQUIRED: requireReversal()
+    SUCCESS --> SETTLED
+    SUCCESS --> REFUND_REQUESTED
+    SUCCESS --> REVERSAL_REQUIRED
 
-    SETTLED --> RECONCILED: reconcile()
-    SETTLED --> REFUND_REQUESTED: requestRefund()
+    SETTLED --> RECONCILED
+    SETTLED --> REFUND_REQUESTED
 
-    REFUND_REQUESTED --> REFUNDED: refund()
+    REFUND_REQUESTED --> REFUNDED
 
-    CREATED --> MANUAL_REVIEW: mismatch / exception path
-    PENDING --> MANUAL_REVIEW: mismatch / exception path
-    AUTHORIZED --> MANUAL_REVIEW: mismatch / exception path
-    SUCCESS --> MANUAL_REVIEW: mismatch / exception path
-    SETTLED --> MANUAL_REVIEW: mismatch / exception path
+    CREATED --> MANUAL_REVIEW
+    PENDING --> MANUAL_REVIEW
+    AUTHORIZED --> MANUAL_REVIEW
+    SUCCESS --> MANUAL_REVIEW
+    SETTLED --> MANUAL_REVIEW
 
     FAILED --> [*]
     EXPIRED --> [*]
@@ -385,6 +362,15 @@ The demo script performs this flow:
 6. send reconciliation report with mismatch
 7. print open review cases
 8. print audit trail
+
+If the script was already run before and fixed demo IDs collide, reset the local database:
+
+```bash
+docker compose down -v
+docker compose up -d postgres
+```
+
+Then restart the app and run the demo again.
 
 ---
 
@@ -745,7 +731,7 @@ No deployment, registry publish, artifact publish, or scheduled workflow is incl
 
 ## Limitations
 
-This project does NOT:
+This project does not:
 
 - process real payments
 - connect to a real payment gateway
@@ -760,6 +746,8 @@ This project does NOT:
 - implement production-grade observability
 
 These omissions are intentional.
+
+---
 
 ## What To Review First
 
