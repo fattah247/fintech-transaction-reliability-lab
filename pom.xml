@@ -12,9 +12,9 @@
     </parent>
 
     <groupId>id.fatarc.portfolio</groupId>
-    <artifactId>fintech-transaction-reliability-lab</artifactId>
+    <artifactId>Payflow-reliability</artifactId>
     <version>0.1.0</version>
-    <name>Fintech Transaction Reliability Lab</name>
+    <name>Payflow Reliability</name>
     <description>NDA-safe payment reliability backend portfolio project</description>
 
     <properties>

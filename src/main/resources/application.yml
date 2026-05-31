@@ -1,10 +1,10 @@
 spring:
   application:
-    name: fintech-transaction-reliability-lab
+    name: Payflow-reliability
   datasource:
-    url: jdbc:postgresql://localhost:5432/fintech_lab
-    username: fintech_lab
-    password: fintech_lab
+    url: jdbc:postgresql://localhost:5432/payflow_reliability
+    username: payflow_reliability
+    password: payflow_reliability
   jpa:
     hibernate:
       ddl-auto: update

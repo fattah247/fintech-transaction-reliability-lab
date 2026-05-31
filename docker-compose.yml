@@ -1,20 +1,20 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: fintech_lab_postgres
+    container_name: payflow_reliability_postgres
     environment:
-      POSTGRES_DB: fintech_lab
-      POSTGRES_USER: fintech_lab
-      POSTGRES_PASSWORD: fintech_lab
+      POSTGRES_DB: payflow_reliability
+      POSTGRES_USER: payflow_reliability
+      POSTGRES_PASSWORD: payflow_reliability
     ports:
       - "5432:5432"
     volumes:
-      - fintech_lab_pgdata:/var/lib/postgresql/data
+      - payflow_reliability_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fintech_lab -d fintech_lab"]
+      test: ["CMD-SHELL", "pg_isready -U payflow_reliability -d payflow_reliability"]
       interval: 5s
       timeout: 5s
       retries: 10
 
 volumes:
-  fintech_lab_pgdata:
+  payflow_reliability_pgdata:

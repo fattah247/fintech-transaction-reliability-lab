@@ -29,7 +29,7 @@ section() {
 
 clear
 
-echo "Fintech Transaction Reliability Lab"
+echo "Payflow Reliability"
 echo "Local demo run: $RUN_ID"
 echo
 echo "This demo proves:"

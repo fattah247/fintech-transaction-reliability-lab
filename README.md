@@ -1,6 +1,6 @@
-# Fintech Transaction Reliability Lab
+# Payflow Reliability
 
-![CI](https://github.com/fattah247/fintech-transaction-reliability-lab/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/fattah247/Payflow-reliability/actions/workflows/ci.yml/badge.svg)
 
 A local-first Spring Boot backend that simulates reliability problems commonly found in payment systems: duplicate requests, webhook retries, invalid state changes, settlement mismatches, refund timing, manual review, and auditability.
 
@@ -263,7 +263,7 @@ These screenshots show the project as a runnable backend system, not only source
 │   └── screenshots
 ├── scripts
 │   └── demo.sh
-├── src/main/java/id/fatarc/portfolio/fintechlab
+├── src/main/java/id/fatarc/portfolio/payflowreliability
 │   ├── audit
 │   ├── common
 │   ├── payment
@@ -271,7 +271,7 @@ These screenshots show the project as a runnable backend system, not only source
 │   ├── refund
 │   ├── review
 │   └── settlement
-└── src/test/java/id/fatarc/portfolio/fintechlab
+└── src/test/java/id/fatarc/portfolio/payflowreliability
 ```
 
 ---
